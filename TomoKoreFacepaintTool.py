@@ -10,7 +10,18 @@ SWIZZLE_MODE = 4
 
 
 def gammaedit(img: Image, gamma: int = 0.4545):
-    return img.point(lambda x: ((x / 255) ** gamma) * 255)
+    def gamma_map(x):
+        return int(round(((x / 255) ** gamma) * 255))
+
+    if img.mode == 'RGBA':
+        r, g, b, a = img.split()
+        r = r.point(gamma_map)
+        g = g.point(gamma_map)
+        b = b.point(gamma_map)
+        return Image.merge('RGBA', (r, g, b, a))
+    if img.mode == 'RGB':
+        return img.point(gamma_map)
+    return img.convert('RGB').point(gamma_map)
 
 
 def canvas_2_png(img):
@@ -63,10 +74,10 @@ def png_2_canvas(imagePath, useSrgb=False):
     elif image_res == 2:
         img = ImageOps.fit(img, (256, 256))
 
+    img = img.convert('RGBA')
     if not useSrgb:
         img = gammaedit(img, 2.2)
 
-    img = img.convert('RGBA')
     convert_img = img.tobytes('raw')
     save_path = imagePath.with_name(imagePath.stem + "OUTPUT.canvas")
 
@@ -130,9 +141,13 @@ def png_2_ugctex(imagePath, useSrgb=False):
             img = img.resize(convert_size, 1)
         elif image_res == 2:
             img = ImageOps.fit(img, convert_size)
-        if not use_srgb:
-            img = gammaedit(img,2.2)
-            
+
+        img = img.convert('RGBA')
+        if not useSrgb:
+            img = gammaedit(img, 2.2)
+    else:
+        img = img.convert('RGBA')
+
     dds_bytes = io.BytesIO()
     img.save(dds_bytes, format='DDS', pixel_format='DXT1')
 

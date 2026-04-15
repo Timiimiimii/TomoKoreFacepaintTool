@@ -1,0 +1,6 @@
+# requirements.txt
+
+numpy==2.4.4
+pathlib==1.0.1
+pillow==12.2.0
+pyswizzle==1.0.2
