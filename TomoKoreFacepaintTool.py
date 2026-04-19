@@ -2,12 +2,45 @@ try:
     from PIL import Image, ImageCms, ImageOps
     from pyswizzle import nsw_deswizzle, nsw_swizzle
     from pathlib import Path
+    import struct
     import io
 except ImportError as e:
     print(f"An import error occurred: {e}")
 
 SWIZZLE_MODE = 4
 
+def infer_ugctex_encoding(raw_data):
+    match len(raw_data):
+        case 131072:
+            return (512, 512), 4, 4
+        case 98304:
+            return (384, 384), 4, 3
+        case _: # Should be caugth by the previous check, but just in-case.
+            raise ValueError(f"Invalid UGCTex data size: {len(raw_data)} bytes.")
+
+# https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dds-header
+def create_dds_header(texture_size):
+
+    header = bytearray(128)
+    header[0:4] = b'DDS '                               # Magic
+    struct.pack_into('<I', header, 4, 124)              # dwSize
+    struct.pack_into('<I', header, 8, 0x0a1007)         # dwFlags
+    struct.pack_into('<I', header, 12, texture_size[1]) # dwHeight
+    struct.pack_into('<I', header, 16, texture_size[0]) # dwWidth
+    linear_size = (texture_size[1] // 4) * (texture_size[0] // 4) * 8
+    struct.pack_into('<I', header, 20, linear_size)     # dwPitchOrLinearSize
+    struct.pack_into('<I', header, 24, 0)               # dwDepth
+    struct.pack_into('<I', header, 28, 0)               # dwMipMapCount
+
+    # DDS_PIXELFORMAT 
+    struct.pack_into('<I', header, 76, 32)   # dwSize
+    struct.pack_into('<I', header, 80, 0x04) # dwFlags
+    header[84:88] = b'DXT1'                  # dwFourCC
+    struct.pack_into('<I', header, 88, 0)    # dwRGBBitCount
+
+    struct.pack_into('<I', header, 108, 0x1000) 
+
+    return bytes(header)
 
 def gammaedit(img: Image, gamma: int = 0.4545):
     return img.point(lambda x: ((x / 255) ** gamma) * 255)
@@ -82,12 +115,10 @@ def png_2_canvas(imagePath, useSrgb=False):
 
 
 def ugctex_2_png(img):
-    convert_size = (512, 512)
-    gob_w, gob_h = 4, 4
+    convert_size, gob_w, gob_h = infer_ugctex_encoding(img)
     bytes_per_block = 8
 
-    with open(Path('DDSHeader.ugctex'), 'rb') as file:
-        dds_header = file.read()
+    dds_header = create_dds_header(convert_size)
 
     swizzled = nsw_deswizzle(raw_data, convert_size, (gob_w, gob_h), bytes_per_block, SWIZZLE_MODE)
 
@@ -175,7 +206,7 @@ while True:
                 if len(raw_data) == 262144:
                     print('Canvas file detected.')
                     canvas_2_png(raw_data)
-                elif len(raw_data) == 131072:
+                elif len(raw_data) == 131072 or len(raw_data) == 98304:
                     print('UgcTex file detected.')
                     ugctex_2_png(raw_data)
                 else:
